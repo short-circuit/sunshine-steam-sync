@@ -1,0 +1,28 @@
+# Environment
+.env
+
+# Logs
+*.log
+
+# Virtual environment
+.venv/
+.venv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Package manager
+uv.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sunshine config backups
+*.backup

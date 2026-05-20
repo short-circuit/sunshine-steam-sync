@@ -1,0 +1,6 @@
+vdf
+requests
+pillow
+glob2
+psutil
+dotenv
