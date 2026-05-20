@@ -6,7 +6,9 @@ import psutil
 
 
 def restart_steam(steam_exe_path: str) -> None:
-    """Restart Steam application safely."""
+    """Gracefully terminate Steam (by matching ``steam.exe``) and
+    relaunch it from the given path.  Only implemented on Windows;
+    logs a warning on Linux."""
     if os.name != 'nt':
         logging.warning("Steam restarting is only supported on Windows. Please restart Steam manually if any game is missing.")
         return
@@ -42,7 +44,10 @@ def restart_steam(steam_exe_path: str) -> None:
 
 
 def _find_and_kill(name_match: str) -> bool:
-    """Find and terminate all processes matching name. Returns True if any were killed."""
+    """Iterate all running processes and ``terminate()`` every one whose
+    name equals *name_match* (case-insensitive).  Falls back to ``kill()``
+    after a 30-second grace period.  Returns ``True`` if any process was
+    terminated."""
     terminated = False
     for proc in psutil.process_iter(['name', 'pid']):
         try:
@@ -61,7 +66,15 @@ def _find_and_kill(name_match: str) -> bool:
 
 
 def restart_sunshine(sunshine_exe_path: str) -> None:
-    """Restart Sunshine safely. Tries binary, then user systemd on Linux."""
+    """Restart Sunshine via the best available method:
+
+    1. If an executable path is configured and exists, kill the old
+       process and launch the binary directly.
+    2. On Linux, try ``systemctl --user restart`` (first
+       ``sunshine.service``, then ``sunshine``).
+    3. Fall back to killing any ``sunshine`` process found and warn the
+       user to restart manually.
+    """
     logging.info("Restarting Sunshine...")
 
     try:

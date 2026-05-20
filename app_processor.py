@@ -14,6 +14,13 @@ from steam_api import find_game_executable
 
 
 class Spinner:
+    """Daemon-thread-based terminal spinner that displays a rotating glyph
+    alongside a timestamp and status message, refreshing at ~10 Hz.
+
+    Call ``start()`` before entering a long-running section, ``update()``
+    whenever the message changes, and ``stop()`` when done — the spinner
+    line is erased on stop so subsequent log output starts cleanly."""
+
     def __init__(self):
         self._chars = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
         self._message = ""
@@ -21,15 +28,18 @@ class Spinner:
         self._thread = None
 
     def start(self, message=""):
+        """Launch the spinner thread with an initial status *message*."""
         self._message = message
         self._running = True
         self._thread = threading.Thread(target=self._spin, daemon=True)
         self._thread.start()
 
     def update(self, message=""):
+        """Replace the status message shown on the spinner line."""
         self._message = message
 
     def _spin(self):
+        """Continuously redraw the spinner line until ``stop()`` is called."""
         while self._running:
             ts = datetime.now().strftime('%H:%M:%S')
             icon = next(self._chars)
@@ -38,6 +48,7 @@ class Spinner:
             time.sleep(0.1)
 
     def stop(self):
+        """Halt the spinner thread and erase the spinner line from the terminal."""
         self._running = False
         if self._thread:
             self._thread.join()
@@ -69,9 +80,11 @@ def extract_app_id(cmd: str) -> str | None:
 
 
 def cleanup_steam_apps(sunshine_config: dict, grids_folder: str, dry_run: bool = False) -> Tuple[List[dict], List[Tuple[str, str]]]:
-    """Remove all Steam-based entries from Sunshine config.
+    """Remove all Steam-based entries from Sunshine config and delete
+    their associated grid images.
 
-    Returns (kept_apps, removed_names_and_ids).
+    Returns (kept_apps, removed_names_and_ids) so the caller can show
+    a summary and optionally persist the result.
     """
     kept = []
     removed = []
@@ -100,7 +113,14 @@ def process_existing_apps(
     sunshine_config: dict,
     installed_games: dict
 ) -> Tuple[List[dict], List[Tuple[str, str]], Set[str], Set[str]]:
-    """Process existing Sunshine apps and identify changes."""
+    """Diff the current Sunshine apps against the installed-game list.
+
+    Returns:
+      updated_apps         — apps to keep (possibly modified)
+      removed_games        — (name, app_id) for entries whose game is no longer installed
+      existing_steam_apps  — set of app_ids already present
+      games_need_grid_redownload — set of app_ids whose grid image is missing
+    """
     updated_apps = []
     removed_games = []
     existing_steam_apps: Set[str] = set()
@@ -141,7 +161,12 @@ def process_existing_apps(
 
 
 def _build_steam_cmd(app_id: str, use_watcher: bool, library_vdf_path: str = "") -> str:
-    """Build the cmd for a Steam game entry (always uses Big Picture mode)."""
+    """Build the ``cmd`` string for a Steam game entry.
+
+    With ``--wait`` the command invokes the ``steam_game_watcher.py``
+    script; otherwise it uses the appropriate ``steam://rungameid/``
+    URI, detecting Flatpak vs. native Steam on Linux.
+    """
     if use_watcher:
         watcher = os.path.join(os.path.dirname(__file__), "steam_game_watcher.py")
         exe = find_game_executable(app_id, library_vdf_path) if library_vdf_path else None
@@ -171,7 +196,12 @@ def add_new_games(
     use_watcher: bool = False,
     library_vdf_path: str = "",
 ) -> List[dict]:
-    """Add new games with grid images using concurrent downloads."""
+    """Download grid art for each new game (concurrently, up to 5 workers)
+    and build the corresponding Sunshine app entry dicts.
+
+    Shows a live spinner with progress; each completed game is logged at
+    DEBUG level to keep the console output clean.
+    """
     new_apps = []
     if not new_games:
         return new_apps

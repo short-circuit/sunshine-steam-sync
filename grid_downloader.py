@@ -14,7 +14,15 @@ def fetch_grid_from_steamgriddb(
     grids_folder: str,
     game_name: Optional[str] = None
 ) -> Optional[str]:
-    """Fetch game grid image from SteamGridDB with retry logic."""
+    """Download a grid image from SteamGridDB for the given *app_id*
+    and save it as ``{grids_folder}/{app_id}.png``.
+
+    For non-Steam games (negative app_id) the function first searches
+    by *game_name* to obtain a SteamGridDB game ID, then fetches the
+    grid.  Retries API calls up to 3 times with exponential back-off.
+
+    Returns the local path to the saved image, or ``None`` on failure.
+    """
     headers = {"Authorization": f"Bearer {api_key}"}
 
     grid_url = None

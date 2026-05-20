@@ -11,6 +11,10 @@ from process import restart_steam, restart_sunshine
 
 
 class ColoredFormatter(logging.Formatter):
+    """Custom formatter that applies ANSI colour codes to log level labels
+    and prepends a carriage-return + clear-line sequence so log messages
+    cleanly overwrite any spinner output on the same terminal line."""
+
     grey = '\033[90m'
     cyan = '\033[36m'
     green = '\033[32m'
@@ -28,6 +32,7 @@ class ColoredFormatter(logging.Formatter):
     }
 
     def format(self, record):
+        """Format the log record with a coloured level name and leading clear sequence."""
         color = self.LEVEL_COLORS.get(record.levelno, self.reset)
         record.levelname_colored = f"{color}{record.levelname}{self.reset}"
         msg = super().format(record)
@@ -35,7 +40,8 @@ class ColoredFormatter(logging.Formatter):
 
 
 def setup_logging(verbose: bool = False) -> None:
-    """Configure logging for the application."""
+    """Configure dual-output logging: colourised console (with timestamps)
+    and a plain log file that is overwritten on each run."""
     level = logging.DEBUG if verbose else logging.INFO
 
     console_handler = logging.StreamHandler(sys.stdout)
@@ -56,7 +62,7 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+    """Parse and return CLI flags (verbose, no-restart, dry-run, cleanup, wait)."""
     parser = argparse.ArgumentParser(description='sunshine-steam-sync')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     parser.add_argument('--no-restart', action='store_true', help='Skip restarting Steam and Sunshine')
@@ -67,7 +73,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Main application function."""
+    """Orchestrate the full sync: load config, diff Steam library against
+    Sunshine apps.json, download missing grid art, write updated config,
+    restart services, and print a summary box.  Also handles --cleanup and
+    --dry-run modes."""
     args = parse_args()
     setup_logging(args.verbose)
     logging.info("Starting sunshine-steam-sync")

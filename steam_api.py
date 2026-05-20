@@ -11,7 +11,8 @@ import vdf
 
 
 def get_steam_userdata_path() -> Optional[str]:
-    """Find the Steam userdata directory."""
+    """Locate the Steam userdata directory (contains ``shortcuts.vdf``
+    and other per-user data).  Returns ``None`` if Steam is not found."""
     if os.name == 'nt':
         steam_root = os.path.join(os.environ.get('PROGRAMFILES', 'C:/Program Files'), 'Steam')
     else:
@@ -35,7 +36,12 @@ def get_steam_userdata_path() -> Optional[str]:
 
 
 def load_shortcuts() -> Dict[str, Dict]:
-    """Load non-Steam games from Steam shortcuts.vdf."""
+    """Parse Steam's binary ``shortcuts.vdf`` and return a dict of
+    non-Steam game entries keyed by their (negative) app ID.
+
+    Only entries with a negative app ID (i.e. user-added shortcuts)
+    are included; built-in shortcuts are ignored.
+    """
     shortcuts = {}
     userdata_path = get_steam_userdata_path()
     if not userdata_path:
@@ -70,7 +76,9 @@ def load_shortcuts() -> Dict[str, Dict]:
 
 @lru_cache(maxsize=1000)
 def get_game_name(app_id: str) -> Optional[str]:
-    """Fetch game name from Steam API with caching and retry logic."""
+    """Look up a game's display name from the Steam store API.
+    Results are cached (LRU, 1000 entries) and the request is retried
+    up to 3 times with exponential back-off on failure."""
     url = f"https://store.steampowered.com/api/appdetails?appids={app_id}"
 
     for attempt in range(3):
@@ -105,7 +113,8 @@ def get_game_name(app_id: str) -> Optional[str]:
 
 
 def get_library_folders(library_vdf_path: str) -> list[str]:
-    """Return list of Steam library folder paths from libraryfolders.vdf."""
+    """Parse ``libraryfolders.vdf`` and return the list of Steam library
+    root paths (each containing ``steamapps/``)."""
     try:
         with open(library_vdf_path, 'r', encoding='utf-8') as f:
             data = vdf.load(f)
@@ -168,7 +177,9 @@ def find_game_executable(app_id: str, library_vdf_path: str) -> Optional[str]:
 
 
 def load_installed_games(library_vdf_path: str) -> Dict[str, str]:
-    """Load installed games from Steam library VDF file and shortcuts."""
+    """Build a dict of ``{app_id: display_name}`` for every installed
+    Steam game (plus non-Steam shortcuts) by parsing the library VDF
+    and fetching names from the store API concurrently (10 workers)."""
     logging.info(f"Loading Steam library from {library_vdf_path}")
 
     installed_games = {}

@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 
 
 def normalize_path(path: str) -> str:
-    """Normalize path and handle escape sequences properly."""
+    """Normalise a user-supplied path: collapse separators, expand
+    environment variables (``%VAR%`` / ``$VAR``) and ``~``."""
     if not path:
         return path
 
@@ -23,7 +24,9 @@ def normalize_path(path: str) -> str:
 
 
 def get_steam_userdata_path() -> Optional[str]:
-    """Find the Steam userdata directory."""
+    """Locate the Steam userdata directory used for shortcuts.vdf
+    and other per-user configuration.  Returns ``None`` if Steam
+    does not appear to be installed."""
     if os.name == 'nt':
         steam_root = os.path.join(os.environ.get('PROGRAMFILES', 'C:/Program Files'), 'Steam')
     else:
@@ -77,7 +80,9 @@ def _get_default_paths() -> Dict[str, str]:
 
 
 def validate_config() -> Dict[str, str]:
-    """Load and validate configuration from environment variables."""
+    """Load configuration from ``.env`` (if present), falling back to
+    OS-specific default paths for every setting.  The Steam library VDF
+    must exist on disk; otherwise the process exits with an error."""
     load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
     defaults = _get_default_paths()
@@ -117,7 +122,9 @@ def validate_config() -> Dict[str, str]:
 
 
 def get_sunshine_config(path: str) -> Dict:
-    """Load Sunshine configuration with error handling."""
+    """Read the Sunshine ``apps.json`` from disk and return it as a dict.
+    If the file does not exist yet, return an empty config skeleton
+    (``{"env": "", "apps": []}``)."""
     try:
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as file:
@@ -147,7 +154,9 @@ def get_sunshine_config(path: str) -> Dict:
 
 
 def save_sunshine_config(path: str, config: Dict) -> None:
-    """Save Sunshine configuration with backup and error handling."""
+    """Write the Sunshine config dict to disk as pretty-printed JSON.
+    Creates a ``.backup`` of the existing file before overwriting, and
+    creates the parent directory tree if needed."""
     try:
         if os.path.exists(path):
             backup_path = f"{path}.backup"
