@@ -1,11 +1,48 @@
+import itertools
 import logging
 import os
 import subprocess
+import sys
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from typing import List, Set, Tuple
 
 from grid_downloader import fetch_grid_from_steamgriddb
 from steam_api import find_game_executable
+
+
+class Spinner:
+    def __init__(self):
+        self._chars = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+        self._message = ""
+        self._running = False
+        self._thread = None
+
+    def start(self, message=""):
+        self._message = message
+        self._running = True
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def update(self, message=""):
+        self._message = message
+
+    def _spin(self):
+        while self._running:
+            ts = datetime.now().strftime('%H:%M:%S')
+            icon = next(self._chars)
+            sys.stdout.write(f"\r\033[90m[{ts}]\033[0m {icon} {self._message}\033[K")
+            sys.stdout.flush()
+            time.sleep(0.1)
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join()
+        sys.stdout.write('\r\033[K')
+        sys.stdout.flush()
 
 
 def is_steam_cmd(cmd: str) -> bool:
@@ -31,8 +68,11 @@ def extract_app_id(cmd: str) -> str | None:
     return None
 
 
-def cleanup_steam_apps(sunshine_config: dict, grids_folder: str, dry_run: bool = False) -> List[dict]:
-    """Remove all Steam-based entries from Sunshine config."""
+def cleanup_steam_apps(sunshine_config: dict, grids_folder: str, dry_run: bool = False) -> Tuple[List[dict], List[Tuple[str, str]]]:
+    """Remove all Steam-based entries from Sunshine config.
+
+    Returns (kept_apps, removed_names_and_ids).
+    """
     kept = []
     removed = []
 
@@ -53,15 +93,7 @@ def cleanup_steam_apps(sunshine_config: dict, grids_folder: str, dry_run: bool =
         else:
             kept.append(app)
 
-    if removed:
-        if dry_run:
-            logging.info(f"[DRY RUN] Would remove {len(removed)} Steam entries: {[n for n, _ in removed]}")
-        else:
-            logging.info(f"Removed {len(removed)} Steam entries: {[n for n, _ in removed]}")
-    else:
-        logging.info("No Steam entries found to remove")
-
-    return kept
+    return kept, removed
 
 
 def process_existing_apps(
@@ -144,6 +176,10 @@ def add_new_games(
     if not new_games:
         return new_apps
 
+    total = len(new_games)
+    spinner = Spinner()
+    spinner.start(f"Adding games... (0/{total})")
+
     with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_app_id = {}
 
@@ -174,9 +210,14 @@ def add_new_games(
                     "image-path": grid_path or ""
                 }
                 new_apps.append(new_app)
-                logging.info(f"\033[32mAdded:\033[0m {game_name}")
+
+                logging.debug(f"Added: {game_name}")
+                spinner.update(f"Adding games... {game_name:<40} ({processed}/{total})")
 
             except Exception as e:
-                logging.warning(f"Failed to add {installed_games.get(app_id, app_id)}: {e}")
+                name = installed_games.get(app_id, app_id)
+                logging.debug(f"Failed to add {name}: {e}")
+                spinner.update(f"Adding games... failed: {name:<35} ({processed}/{total})")
 
+    spinner.stop()
     return new_apps

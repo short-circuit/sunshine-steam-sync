@@ -30,7 +30,8 @@ class ColoredFormatter(logging.Formatter):
     def format(self, record):
         color = self.LEVEL_COLORS.get(record.levelno, self.reset)
         record.levelname_colored = f"{color}{record.levelname}{self.reset}"
-        return super().format(record)
+        msg = super().format(record)
+        return f"\r\033[K{msg}"
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -80,12 +81,26 @@ def main() -> None:
         sunshine_config = get_sunshine_config(config['SUNSHINE_APPS_JSON'])
 
         if args.cleanup:
-            remaining = cleanup_steam_apps(
+            remaining, cleaned = cleanup_steam_apps(
                 sunshine_config, config['SUNSHINE_GRIDS'], dry_run=args.dry_run
             )
             if not args.dry_run:
                 sunshine_config['apps'] = remaining
                 save_sunshine_config(config['SUNSHINE_APPS_JSON'], sunshine_config)
+
+            logging.info("")
+            logging.info("╔══════════════════════════════════════╗")
+            logging.info("║           Cleanup Complete           ║")
+            logging.info("╠══════════════════════════════════════╣")
+            if cleaned:
+                for name, _ in cleaned:
+                    logging.info(f"║  - {name:<34}║")
+            else:
+                logging.info(f"║{'Nothing to clean':^38}║")
+            logging.info("╚══════════════════════════════════════╝")
+
+            if not args.no_restart and not args.dry_run:
+                restart_sunshine(config['SUNSHINE_EXE'])
             return
 
         installed_games = load_installed_games(config['STEAM_LIBRARY_VDF'])
