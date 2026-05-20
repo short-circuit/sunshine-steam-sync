@@ -111,7 +111,9 @@ def cleanup_steam_apps(sunshine_config: dict, grids_folder: str, dry_run: bool =
 
 def process_existing_apps(
     sunshine_config: dict,
-    installed_games: dict
+    installed_games: dict,
+    use_watcher: bool = False,
+    library_vdf_path: str = "",
 ) -> Tuple[List[dict], List[Tuple[str, str]], Set[str], Set[str]]:
     """Diff the current Sunshine apps against the installed-game list.
 
@@ -140,6 +142,9 @@ def process_existing_apps(
                         except Exception:
                             pass
                     continue
+                app['cmd'] = _build_steam_cmd(app_id, use_watcher, library_vdf_path)
+                if app.get('detached') == '':
+                    app['detached'] = 'false'
                 grid_path = app.get('image-path')
                 if not grid_path or not os.path.exists(grid_path):
                     games_need_grid_redownload.add(app_id)
@@ -171,8 +176,8 @@ def _build_steam_cmd(app_id: str, use_watcher: bool, library_vdf_path: str = "")
         watcher = os.path.join(os.path.dirname(__file__), "steam_game_watcher.py")
         exe = find_game_executable(app_id, library_vdf_path) if library_vdf_path else None
         if exe:
-            return f"python3 {watcher} {app_id} {exe}"
-        return f"python3 {watcher} {app_id}"
+            return f"{sys.executable} {watcher} {app_id} {exe}"
+        return f"{sys.executable} {watcher} {app_id}"
 
     if os.name == 'nt':
         return f"steam://rungameid/{app_id}"
@@ -232,7 +237,7 @@ def add_new_games(
                     "name": game_name,
                     "cmd": cmd,
                     "output": "",
-                    "detached": "",
+                    "detached": "false",
                     "elevated": "false",
                     "hidden": "true",
                     "wait-all": "true",

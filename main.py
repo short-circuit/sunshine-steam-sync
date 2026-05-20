@@ -117,7 +117,7 @@ def main() -> None:
         os.makedirs(config['SUNSHINE_GRIDS'], exist_ok=True)
 
         updated_apps, removed_games, existing_steam_apps, games_need_grid_redownload = process_existing_apps(
-            sunshine_config, installed_games
+            sunshine_config, installed_games, use_watcher=args.wait, library_vdf_path=config['STEAM_LIBRARY_VDF'],
         )
 
         new_games = set(installed_games.keys()) - existing_steam_apps
