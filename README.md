@@ -30,7 +30,7 @@ Synchronise your Steam library (including non-Steam shortcuts) with [Sunshine](h
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/sunshine-steam-sync.git
+git clone https://github.com/short-circuit/sunshine-steam-sync.git
 cd sunshine-steam-sync
 uv sync
 ```
