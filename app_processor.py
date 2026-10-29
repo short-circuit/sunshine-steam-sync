@@ -143,8 +143,11 @@ def process_existing_apps(
                             pass
                     continue
                 app['cmd'] = _build_steam_cmd(app_id, use_watcher, library_vdf_path)
-                if app.get('detached') == '':
-                    app['detached'] = 'false'
+                # Sunshine's schema: `detached` is a list of commands (not a bool),
+                # and auto-detach behaviour is controlled by `auto-detach`.
+                if not isinstance(app.get('detached'), list):
+                    app['detached'] = []
+                app['auto-detach'] = False
                 grid_path = app.get('image-path')
                 if not grid_path or not os.path.exists(grid_path):
                     games_need_grid_redownload.add(app_id)
@@ -165,19 +168,42 @@ def process_existing_apps(
     return updated_apps, removed_games, existing_steam_apps, games_need_grid_redownload
 
 
+def _quote_cmd_token(token: str) -> str:
+    """Return *token* quoted so Sunshine's command parser keeps it as a single
+    argument, even when it contains spaces or quote characters.
+
+    On POSIX Sunshine uses boost's ``split_unix``, which honours double-quoted
+    strings (with ``\\`` and ``\"`` escapes).  On Windows it uses MSVC-style
+    command-line parsing, which :func:`subprocess.list2cmdline` renders
+    correctly.  Tokens that need no quoting are returned unchanged.
+    """
+    if os.name == 'nt':
+        return subprocess.list2cmdline([token])
+
+    needs_quote = any(ch.isspace() for ch in token) or '"' in token or '\\' in token
+    if not needs_quote:
+        return token
+    escaped = token.replace('\\', '\\\\').replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _build_steam_cmd(app_id: str, use_watcher: bool, library_vdf_path: str = "") -> str:
     """Build the ``cmd`` string for a Steam game entry.
 
     With ``--wait`` the command invokes the ``steam_game_watcher.py``
     script; otherwise it uses the appropriate ``steam://rungameid/``
     URI, detecting Flatpak vs. native Steam on Linux.
+
+    Tokens that contain whitespace (e.g. ``DJMAX RESPECT V.exe``) or
+    quote characters are quoted so Sunshine does not split them apart.
     """
     if use_watcher:
         watcher = os.path.join(os.path.dirname(__file__), "steam_game_watcher.py")
         exe = find_game_executable(app_id, library_vdf_path) if library_vdf_path else None
+        argv = [sys.executable, watcher, app_id]
         if exe:
-            return f"{sys.executable} {watcher} {app_id} {exe}"
-        return f"{sys.executable} {watcher} {app_id}"
+            argv.append(exe)
+        return ' '.join(_quote_cmd_token(token) for token in argv)
 
     if os.name == 'nt':
         return f"steam://rungameid/{app_id}"
@@ -237,11 +263,12 @@ def add_new_games(
                     "name": game_name,
                     "cmd": cmd,
                     "output": "",
-                    "detached": "false",
-                    "elevated": "false",
+                    "detached": [],
+                    "elevated": False,
                     "hidden": "true",
-                    "wait-all": "true",
-                    "exit-timeout": "5",
+                    "wait-all": True,
+                    "exit-timeout": 5,
+                    "auto-detach": False,
                     "image-path": grid_path or ""
                 }
                 new_apps.append(new_app)
