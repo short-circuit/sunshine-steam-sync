@@ -114,19 +114,21 @@ def process_existing_apps(
     installed_games: dict,
     use_watcher: bool = False,
     library_vdf_path: str = "",
-) -> Tuple[List[dict], List[Tuple[str, str]], Set[str], Set[str]]:
+) -> Tuple[List[dict], List[Tuple[str, str]], Set[str], Set[str], int]:
     """Diff the current Sunshine apps against the installed-game list.
 
     Returns:
-      updated_apps         — apps to keep (possibly modified)
-      removed_games        — (name, app_id) for entries whose game is no longer installed
-      existing_steam_apps  — set of app_ids already present
-      games_need_grid_redownload — set of app_ids whose grid image is missing
+      updated_apps            — apps to keep (possibly modified)
+      removed_games           — (name, app_id) for entries whose game is no longer installed
+      existing_steam_apps     — set of app_ids already present
+      games_need_grid_redownload    — set of app_ids whose grid image is missing
+      duplicates_removed      — count of duplicate app entries removed
     """
     updated_apps = []
     removed_games = []
     existing_steam_apps: Set[str] = set()
     games_need_grid_redownload: Set[str] = set()
+    duplicates_removed = 0
 
     for app in sunshine_config.get('apps', []):
         cmd = app.get('cmd', '')
@@ -135,8 +137,21 @@ def process_existing_apps(
             if app_id in installed_games:
                 if app_id in existing_steam_apps:
                     logging.info(f"Removing duplicate: {app.get('name', app_id)}")
+                    duplicates_removed += 1
+                    # The kept (first) entry may still reference the same grid
+                    # (both share grids/<app_id>.png), so only delete the image
+                    # if the duplicate has a DIFFERENT path that nothing uses.
+                    kept_path = next(
+                        (
+                            kept.get('image-path')
+                            for kept in updated_apps
+                            if is_steam_cmd(kept.get('cmd', ''))
+                            and extract_app_id(kept.get('cmd', '')) == app_id
+                        ),
+                        None,
+                    )
                     grid_path = app.get('image-path')
-                    if grid_path and os.path.exists(grid_path):
+                    if grid_path and grid_path != kept_path and os.path.exists(grid_path):
                         try:
                             os.remove(grid_path)
                         except Exception:
@@ -165,7 +180,7 @@ def process_existing_apps(
         else:
             updated_apps.append(app)
 
-    return updated_apps, removed_games, existing_steam_apps, games_need_grid_redownload
+    return updated_apps, removed_games, existing_steam_apps, games_need_grid_redownload, duplicates_removed
 
 
 def _quote_cmd_token(token: str) -> str:

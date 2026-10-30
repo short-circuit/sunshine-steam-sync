@@ -116,13 +116,12 @@ def main() -> None:
 
         os.makedirs(config['SUNSHINE_GRIDS'], exist_ok=True)
 
-        updated_apps, removed_games, existing_steam_apps, games_need_grid_redownload = process_existing_apps(
+        updated_apps, removed_games, existing_steam_apps, games_need_grid_redownload, duplicates_removed = process_existing_apps(
             sunshine_config, installed_games, use_watcher=args.wait, library_vdf_path=config['STEAM_LIBRARY_VDF'],
         )
 
         new_games = set(installed_games.keys()) - existing_steam_apps
 
-        duplicates_removed = len(updated_apps) < len(sunshine_config.get('apps', []))
         if removed_games:
             logging.info(f"Games to remove: {[name for name, _ in removed_games]}")
         if new_games:
@@ -130,17 +129,16 @@ def main() -> None:
         if games_need_grid_redownload:
             logging.info(f"Re-downloading grids for {len(games_need_grid_redownload)} games with missing images")
         if duplicates_removed:
-            logging.info("Removed duplicates from list")
-
-        if not removed_games and not new_games and not games_need_grid_redownload and not duplicates_removed:
-            logging.info("No changes needed - all games are up to date")
-            return
+            logging.info(f"Removed {duplicates_removed} duplicate(s) from list")
 
         if args.dry_run:
             logging.info("Dry run mode - no changes will be made")
             return
 
+        # Perform the actual work so we can detect what really changed on disk
+        # before deciding whether to save the config / restart Sunshine.
         has_api_key = bool(config['STEAMGRIDDB_API_KEY'])
+        refreshed_names = []
         if has_api_key:
             new_apps = add_new_games(
                 new_games, installed_games, config['STEAMGRIDDB_API_KEY'], config['SUNSHINE_GRIDS'],
@@ -148,7 +146,6 @@ def main() -> None:
             )
             updated_apps.extend(new_apps)
 
-            refreshed_names = []
             if games_need_grid_redownload:
                 for app_id in games_need_grid_redownload:
                     game_name = installed_games.get(app_id)
@@ -168,16 +165,23 @@ def main() -> None:
                 use_watcher=args.wait, library_vdf_path=config['STEAM_LIBRARY_VDF'],
             )
             updated_apps.extend(new_apps)
-            refreshed_names = []
+
+        added_names = [a['name'] for a in new_apps]
+        removed_names = [n for n, _ in removed_games]
+
+        # Only treat this as a real change if something actually happened — a
+        # missing grid that still fails to download (the "always redownloading"
+        # case) should not force a config rewrite nor a Sunshine restart.
+        changed = bool(removed_games) or bool(new_apps) or bool(duplicates_removed) or bool(refreshed_names)
+        if not changed:
+            logging.info("No changes needed - all games are up to date")
+            return
 
         sunshine_config['apps'] = updated_apps
         save_sunshine_config(config['SUNSHINE_APPS_JSON'], sunshine_config)
 
         if not args.no_restart:
             restart_sunshine(config['SUNSHINE_EXE'])
-
-        added_names = [a['name'] for a in new_apps]
-        removed_names = [n for n, _ in removed_games]
 
         logging.info("")
         logging.info("╔══════════════════════════════════════╗")
