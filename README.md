@@ -8,10 +8,12 @@ Synchronise your Steam library (including non-Steam shortcuts) with [Sunshine](h
 
 - Reads every installed Steam game from your Steam library folders
 - Discovers non-Steam shortcuts added through Steam
+- Resolves the actual game executable for `--wait`, including for non-Steam shortcuts (e.g. Heroic / GOG / Epic / Skyrim mod managers) by scanning the game's install directory
+- Excludes Steam apps that are recorded but no longer actually installed (avoids phantom entries and duplicates)
 - Fetches game names from the Steam store API (with in-memory caching and retry logic)
 - Downloads high-quality grid images from SteamGridDB and places them in Sunshine's grid directory
 - Adds missing games to Sunshine's `apps.json` and removes entries for uninstalled games
-- Deduplicates existing entries to keep the list clean
+- Deduplicates existing entries to keep the list clean, preserving shared grid artwork
 - **Game process watcher** — optional mode where Sunshine monitors the game process and ends the stream automatically when the game exits
 - **Dry-run mode** to preview all changes without touching any files
 - **Cleanup mode** to bulk-remove every Steam-based entry from Sunshine at once
@@ -30,7 +32,7 @@ Synchronise your Steam library (including non-Steam shortcuts) with [Sunshine](h
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/sunshine-steam-sync.git
+git clone https://github.com/short-circuit/sunshine-steam-sync.git
 cd sunshine-steam-sync
 uv sync
 ```
@@ -127,7 +129,7 @@ uv run python main.py --verbose
 
 1. **Load config** — reads paths from the environment (`.env` or OS defaults)
 2. **Restart Steam** (optional) — Steam is restarted so its VDF files are refreshed before parsing
-3. **Read Steam library** — parses `libraryfolders.vdf` to enumerate every installed game, fetches display names from the Steam store API (with retry and caching), and reads non-Steam shortcuts from `shortcuts.vdf`
+3. **Read Steam library** — parses `libraryfolders.vdf` to enumerate every installed game, fetches display names from the Steam store API (with retry and caching), and reads non-Steam shortcuts from `shortcuts.vdf`. Apps that are recorded in the library VDF but no longer present on disk are skipped.
 4. **Diff against Sunshine** — compares the current `apps.json` against the installed game list, marking entries to add, remove, or re-download grids for
 5. **Download grids** — for each new or missing grid, fetches artwork from SteamGridDB using your API key and saves it as a PNG to the configured grids folder
 6. **Write apps.json** — produces the updated Sunshine configuration, keeping all non-Steam apps intact
@@ -145,6 +147,14 @@ When `--wait` is used, the `cmd` field in `apps.json` points to `steam_game_watc
 
 This means your Moonlight (or other Sunshine client) stream will automatically end when you quit the game — no need to manually stop the stream.
 
+#### Executable Resolution
+
+To make process detection reliable, the tool resolves the actual game executable for each entry rather than guessing:
+
+- **Steam games** — the install directory is read from the app manifest, then scanned recursively (following directory symlinks, loop-safe) for the most plausible game binary. Data files, bundled libraries, and helper processes are deprioritised so the real `.exe`/native binary is chosen.
+- **Non-Steam shortcuts** (negative app IDs) — the game's install directory is resolved from the shortcut itself. For **Heroic**-managed games the app's install path is found via Heroic's config (GOG, Legendary, or Nile) and scanned for the actual binary; otherwise the shortcut's configured executable or working directory is used.
+- If no executable can be determined, the entry is left without one and the watcher safely falls back to monitoring Steam's child process tree.
+
 ### Path Auto-Detection
 
 If no `.env` file exists, the tool selects standard paths based on your operating system:
@@ -160,7 +170,7 @@ You can always override any path by setting the corresponding variable in `.env`
 sunshine-steam-sync/
 ├── main.py                 # Entry point and CLI argument parsing
 ├── config.py               # Environment loading, path normalisation, defaults
-├── steam_api.py            # Steam library VDF parser, store API client, shortcuts reader
+├── steam_api.py            # Steam library VDF parser, store API client, shortcuts reader, executable resolution
 ├── app_processor.py        # Diff engine: compares installed games against apps.json
 ├── grid_downloader.py      # SteamGridDB API client with retry and image validation
 ├── steam_game_watcher.py   # Game process watcher for auto stream-end
@@ -169,3 +179,19 @@ sunshine-steam-sync/
 ├── .env.template           # Configuration template (committed)
 └── README.md               # This file
 ```
+
+## Development
+
+```bash
+git clone https://github.com/short-circuit/sunshine-steam-sync.git
+cd sunshine-steam-sync
+uv sync
+```
+
+Run a dry-run to preview changes without touching any files:
+
+```bash
+uv run python main.py --dry-run
+```
+
+Before opening a pull request, make sure the changes compile and are split into small, self-contained commits. Each commit should represent a single logical change so it can be reviewed and, if needed, reverted independently. The working tree is intentionally kept clean of secrets — all configuration (including your SteamGridDB key) lives in `.env`, which is gitignored.
